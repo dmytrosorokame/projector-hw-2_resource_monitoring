@@ -1,0 +1,42 @@
+services:
+  app:
+    container_name: ${APP_HOST}
+    build: ./app
+    env_file: .env
+    hostname: app
+    ports:
+      - ${APP_PORT}:${APP_PORT}
+    depends_on:
+      - mongo
+      - elasticsearch
+
+  mongo:
+    container_name: ${MONGO_HOST}
+    build: ./mongo
+    env_file: .env
+    ports:
+      - ${MONGO_PORT}:${MONGO_PORT}
+    volumes:
+      - mongo:/data/db
+
+  elasticsearch:
+    container_name: ${ELASTIC_HOST}
+    build: ./elasticsearch
+    env_file: .env
+    ports:
+      - ${ELASTIC_PORT}:${ELASTIC_PORT}
+    volumes:
+      - elasticsearch:/usr/share/elasticsearch/data
+    environment:
+      - discovery.type=single-node
+
+  nginx:
+    build: ./nginx
+    ports:
+      - "80:80"
+    depends_on:
+      - app
+
+volumes:
+  mongo:
+  elasticsearch:
