@@ -1,42 +1,91 @@
 services:
-  app:
-    container_name: ${APP_HOST}
-    build: ./app
-    env_file: .env
-    hostname: app
-    ports:
-      - ${APP_PORT}:${APP_PORT}
+  telegraf:
+    container_name: telegraf
+    image: telegraf:1.29-alpine
+    user: "telegraf:root"
     depends_on:
-      - mongo
-      - elasticsearch
-
-  mongo:
-    container_name: ${MONGO_HOST}
-    build: ./mongo
-    env_file: .env
+      - influxdb
+    links:
+      - influxdb
     ports:
-      - ${MONGO_PORT}:${MONGO_PORT}
+      - 8125:8125/udp
     volumes:
-      - mongo:/data/db
+      - ./telegraf/etc/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  influxdb:
+    container_name: influxdb
+    image: influxdb:1.8-alpine
+    ports:
+      - 8086:8086
+    volumes:
+      - ./:/imports
+      - influxdb_volume:/var/lib/influxdb
+    env_file: .env
+
+  grafana:
+    container_name: grafana
+    image: grafana/grafana:10.2.2
+    depends_on:
+      - influxdb
+    links:
+      - influxdb
+    ports:
+      - 3000:3000
+    volumes:
+      - grafana_volume:/var/lib/grafana
+      - ./grafana/provisioning/:/etc/grafana/provisioning/
+      - ./grafana/dashboards/:/var/lib/grafana/dashboards/
+      - ./grafana/grafana.ini:/etc/grafana/grafana.ini
+    env_file: .env
+
+  mongodb:
+    container_name: mongodb
+    build: ./mongo
+    ports:
+      - 27017:27017
+    volumes:
+      - mongodb_volume:/data/db
+    command:
+      ["mongod", "--setParameter", "diagnosticDataCollectionEnabled=true"]
+    env_file: .env
 
   elasticsearch:
-    container_name: ${ELASTIC_HOST}
-    build: ./elasticsearch
-    env_file: .env
+    container_name: elasticsearch
+    image: elasticsearch:8.11.1
     ports:
-      - ${ELASTIC_PORT}:${ELASTIC_PORT}
+      - 9200:9200
     volumes:
-      - elasticsearch:/usr/share/elasticsearch/data
+      - elasticsearch_volume:/usr/share/elasticsearch/data
     environment:
       - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.monitoring.templates.enabled=true
+
+  api:
+    container_name: api
+    build: ./api
+    depends_on:
+      - mongodb
+      - elasticsearch
+    ports:
+      - 3001:3001
+    env_file: .env
 
   nginx:
-    build: ./nginx
-    ports:
-      - "80:80"
+    container_name: nginx
+    image: nginx:1.25-alpine
     depends_on:
-      - app
+      - api
+      - grafana
+    ports:
+      - 80:80
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
 
 volumes:
-  mongo:
-  elasticsearch:
+  mongodb_volume:
+  elasticsearch_volume:
+  influxdb_volume:
+  grafana_volume:
